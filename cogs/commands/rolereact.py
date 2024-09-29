@@ -44,7 +44,7 @@ class RoleReact(commands.Cog):
 
         embed = discord.Embed(title=titre, description="\n".join([f"• {role.name}" for role in valid_roles]), color=discord.Color.blue())
 
-        view = RoleReactView(self.bot, valid_roles, maxroles, locked)
+        view = RoleReactView(valid_roles, maxroles, locked)
         sent_message = await interaction.channel.send(embed=embed, view=view)
 
         self.rolereact_data[str(sent_message.id)] = {
@@ -77,8 +77,8 @@ class RoleReact(commands.Cog):
                 try:
                     message = await channel.fetch_message(int(message_id))
                     roles = [discord.utils.get(channel.guild.roles, id=role_id) for role_id in data['roles']]
-                    view = RoleReactView(self.bot, roles, data['maxroles'], data['locked'])
-                    await message.edit(view=view)
+                    view = RoleReactView(roles, data['maxroles'], data['locked'])
+                    self.bot.add_view(view, message_id=int(message_id))
                     logger.info(f"Vue RoleReact restaurée pour le message ID {message_id}")
                 except discord.NotFound:
                     logger.warning(f"Message RoleReact non trouvé: ID {message_id}. Suppression des données.")
@@ -88,9 +88,8 @@ class RoleReact(commands.Cog):
         self.save_rolereact_data()
 
 class RoleReactView(discord.ui.View):
-    def __init__(self, bot, roles, maxroles, locked):
+    def __init__(self, roles, maxroles, locked):
         super().__init__(timeout=None)
-        self.bot = bot
         self.maxroles = maxroles
         self.locked = locked
         self.roles = roles
