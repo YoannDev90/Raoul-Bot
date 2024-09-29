@@ -29,7 +29,7 @@ extensions = ['cogs.commands.moderation', 'cogs.commands.rolereact', 'cogs.comma
 async def load_cogs():
     for extension in extensions:
         try:
-            await bot.load_extension(f'cogs/commands/{extension}.py')
+            await bot.load_extension(f'{extension}')
             logger.info(f'Loaded extension: {extension}')
         except Exception as e:
             logger.error(f'Failed to load extension {extension}: {e}')
