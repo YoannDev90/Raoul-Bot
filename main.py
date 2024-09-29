@@ -24,7 +24,8 @@ async def on_ready():
         logger.error(f"Erreur lors de la synchronisation des commandes: {e}")
 
 extensions = ['cogs.commands.bancommand', 'cogs.commands.rolereactcommand', 'cogs.commands.newrolecommand', 
-              'cogs.commands.setusernamecommand', 'cogs.commands.clearchannelcommand', 'cogs.commands.automod']
+              'cogs.commands.setusernamecommand', 'cogs.commands.clearchannelcommand', 'cogs.commands.kickcommand',
+              'cogs.commands.mutecommand', 'cogs.commands.unmutecommand','cogs.commands.warncommand','cogs.commands.automod']
 
 async def load_cogs():
     for extension in extensions:
