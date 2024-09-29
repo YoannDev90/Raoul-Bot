@@ -26,7 +26,7 @@ async def on_ready():
 async def load_cogs():
     for extension in ['moderation', 'rolereact', 'newrole', 'setusername', 'clearchannel', 'automod']:
         try:
-            await bot.load_extension(f'cogs/commands/{extension}')
+            await bot.load_extension(f'./cogs/commands/{extension}')
             logger.info(f'Loaded extension: {extension}')
         except Exception as e:
             logger.error(f'Failed to load extension {extension}: {e}')
