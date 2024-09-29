@@ -3,7 +3,6 @@ from discord import app_commands
 from discord.ext import commands
 import json
 import os
-import hashlib
 
 class RoleReact(commands.Cog):
     def __init__(self, bot):
@@ -22,29 +21,51 @@ class RoleReact(commands.Cog):
 
     @app_commands.command()
     @app_commands.checks.has_permissions(manage_roles=True)
-    async def rolereact(self, interaction: discord.Interaction, message: str, roles: str, maxroles: int = 0, locked: bool = False):
+    async def rolereact(self, interaction: discord.Interaction, titre: str, roles: str, maxroles: int = 0, locked: bool = False):
         """
         Crée un message de réaction pour l'attribution de rôles avec des boutons.
+
+        Parameters:
+        -----------
+        titre: str
+            Le titre de l'embed.
+        roles: str
+            Les rôles à attribuer, séparés par des mentions.
+        maxroles: int, optional
+            Le nombre maximum de rôles qu'un utilisateur peut sélectionner (0 pour illimité).
+        locked: bool, optional
+            Si True, les utilisateurs ne peuvent interagir qu'une seule fois avec les boutons.
         """
-        role_list = [role.strip() for role in roles.split(',')]
+        await interaction.response.defer()
 
-        embed = discord.Embed(title="Réaction de Rôle", description=message, color=discord.Color.blue())
-        for role_name in role_list:
-            embed.add_field(name=role_name, value="\u200b", inline=False)
+        role_list = [role.strip() for role in roles.split()]
+        guild_roles = interaction.guild.roles
+        valid_roles = []
+        role_names = []
 
-        view = RoleReactView(self.bot, role_list, maxroles, locked)
+        for role_mention in role_list:
+            role_id = int(role_mention.strip('<@&>'))
+            role = discord.utils.get(guild_roles, id=role_id)
+            if role:
+                valid_roles.append(role)
+                role_names.append(role.name)
+
+        description = "\n".join([f"• {role_name}" for role_name in role_names])
+        embed = discord.Embed(title=titre, description=description, color=discord.Color.blue())
+
+        view = RoleReactView(self.bot, valid_roles, maxroles, locked)
         sent_message = await interaction.channel.send(embed=embed, view=view)
 
         message_id = str(sent_message.id)
         self.rolereact_data[message_id] = {
-            'roles': role_list,
+            'roles': [role.id for role in valid_roles],
             'maxroles': maxroles,
             'locked': locked,
             'channel_id': interaction.channel_id
         }
         self.save_rolereact_data()
 
-        await interaction.response.send_message("Message de réaction de rôle créé.", ephemeral=True)
+        await interaction.followup.send("Message de réaction de rôle créé.", ephemeral=True)
 
     @rolereact.error
     async def rolereact_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -53,61 +74,53 @@ class RoleReact(commands.Cog):
         else:
             await interaction.response.send_message(f"Une erreur s'est produite : {error}", ephemeral=True)
 
-    async def cog_load(self):
-        self.bot.add_view(RoleReactView(self.bot))
-
 class RoleReactView(discord.ui.View):
     def __init__(self, bot, roles=None, maxroles=0, locked=False):
         super().__init__(timeout=None)
         self.bot = bot
-        if roles:
-            for role in roles:
-                self.add_item(RoleButton(role))
         self.maxroles = maxroles
         self.locked = locked
+        self.user_roles_selected = set()  # Pour suivre les rôles sélectionnés par l'utilisateur
+
+        if roles:
+            for i, role in enumerate(roles):
+                button_style = discord.ButtonStyle.primary if i % 2 == 0 else discord.ButtonStyle.danger
+                self.add_item(RoleButton(role, button_style))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         data = self.bot.get_cog('RoleReact').rolereact_data.get(str(interaction.message.id))
+        
         if not data:
             return False
 
-        self.maxroles = data['maxroles']
-        self.locked = data['locked']
-
-        if self.locked:
-            user_roles = [role.name for role in interaction.user.roles]
-            if any(role in user_roles for role in data['roles']):
-                await interaction.response.send_message("Vous avez déjà sélectionné un rôle et ne pouvez plus le changer.", ephemeral=True)
-                return False
+        if self.locked and any(role.id in self.user_roles_selected for role in data['roles']):
+            await interaction.response.send_message("Vous avez déjà sélectionné un rôle et ne pouvez plus le changer.", ephemeral=True)
+            return False
 
         if self.maxroles > 0:
-            user_roles = [role.name for role in interaction.user.roles]
-            selected_roles = [role for role in data['roles'] if role in user_roles]
-            if len(selected_roles) >= self.maxroles and interaction.data['custom_id'].split(':')[1] not in user_roles:
+            user_roles_count = len(self.user_roles_selected)
+            if user_roles_count >= self.maxroles and interaction.data['custom_id'].split(':')[1] not in self.user_roles_selected:
                 await interaction.response.send_message(f"Vous ne pouvez pas sélectionner plus de {self.maxroles} rôles.", ephemeral=True)
                 return False
 
         return True
 
 class RoleButton(discord.ui.Button):
-    def __init__(self, role_name: str):
-        truncated_name = role_name[:80]  # Tronquer le nom du rôle à 80 caractères
-        custom_id = f"rr:{hashlib.md5(role_name.encode()).hexdigest()[:20]}"  # Créer un custom_id unique et court
-        super().__init__(style=discord.ButtonStyle.primary, label=truncated_name, custom_id=custom_id)
-        self.full_role_name = role_name
+    def __init__(self, role: discord.Role, style: discord.ButtonStyle):
+        super().__init__(style=style, label=role.name, custom_id=f"rr:{role.id}")
+        self.role = role
 
     async def callback(self, interaction: discord.Interaction):
-        role = discord.utils.get(interaction.guild.roles, name=self.full_role_name)
-        if role is None:
-            await interaction.response.send_message(f"Le rôle {self.full_role_name} n'existe pas.", ephemeral=True)
-            return
+        view: RoleReactView = self.view  # Récupérer la vue pour accéder aux données
 
-        if role in interaction.user.roles:
-            await interaction.user.remove_roles(role)
-            await interaction.response.send_message(f"Le rôle {self.full_role_name} vous a été retiré.", ephemeral=True)
+        if self.role in interaction.user.roles:
+            await interaction.user.remove_roles(self.role)
+            view.user_roles_selected.discard(self.role.id)  # Retirer le rôle de l'ensemble
+            await interaction.response.send_message(f"Le rôle {self.role.name} vous a été retiré.", ephemeral=True)
         else:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message(f"Le rôle {self.full_role_name} vous a été attribué.", ephemeral=True)
+            await interaction.user.add_roles(self.role)
+            view.user_roles_selected.add(self.role.id)  # Ajouter le rôle à l'ensemble
+            await interaction.response.send_message(f"Le rôle {self.role.name} vous a été attribué.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(RoleReact(bot))
