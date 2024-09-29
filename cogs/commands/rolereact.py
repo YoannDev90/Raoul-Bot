@@ -24,17 +24,6 @@ class RoleReact(commands.Cog):
     async def rolereact(self, interaction: discord.Interaction, titre: str, roles: str, maxroles: int = 0, locked: bool = False):
         """
         Crée un message de réaction pour l'attribution de rôles avec des boutons.
-
-        Parameters:
-        -----------
-        titre: str
-            Le titre de l'embed.
-        roles: str
-            Les rôles à attribuer, séparés par des espaces (mentions de rôles).
-        maxroles: int, optional
-            Le nombre maximum de rôles qu'un utilisateur peut sélectionner (0 pour illimité).
-        locked: bool, optional
-            Si True, les utilisateurs ne peuvent interagir qu'une seule fois avec les boutons.
         """
         await interaction.response.defer()
 
@@ -75,6 +64,23 @@ class RoleReact(commands.Cog):
             await interaction.response.send_message(f"Une erreur s'est produite : {error}", ephemeral=True)
 
     async def cog_load(self):
+        # Charger les anciens rolereact au démarrage du bot
+        for message_id, data in self.rolereact_data.items():
+            channel = self.bot.get_channel(data['channel_id'])
+            if channel:
+                try:
+                    message = await channel.fetch_message(int(message_id))
+                    roles = [discord.utils.get(channel.guild.roles, id=role_id) for role_id in data['roles']]
+                    view = RoleReactView(self.bot, roles, data['maxroles'], data['locked'])
+                    await message.edit(view=view)
+                except discord.NotFound:
+                    # Le message n'existe plus, on le supprime des données
+                    del self.rolereact_data[message_id]
+                    self.save_rolereact_data()
+                except Exception as e:
+                    print(f"Erreur lors du chargement du rolereact {message_id}: {e}")
+
+        # Ajouter la vue persistante
         self.bot.add_view(RoleReactView(self.bot))
 
 class RoleReactView(discord.ui.View):
@@ -101,10 +107,14 @@ class RoleReactView(discord.ui.View):
         return ' ' * padding + name + ' ' * (width - len(name) - padding)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if str(interaction.message.id) not in self.bot.get_cog('RoleReact').rolereact_data:
+        cog = self.bot.get_cog('RoleReact')
+        if not cog:
             return False
 
-        data = self.bot.get_cog('RoleReact').rolereact_data[str(interaction.message.id)]
+        data = cog.rolereact_data.get(str(interaction.message.id))
+        if not data:
+            return False
+
         self.maxroles = data['maxroles']
         self.locked = data['locked']
 
