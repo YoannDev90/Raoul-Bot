@@ -23,8 +23,8 @@ async def on_ready():
     except Exception as e:
         logger.error(f"Erreur lors de la synchronisation des commandes: {e}")
 
-extensions = ['cogs.commands.moderation', 'cogs.commands.rolereact', 'cogs.commands.newrole', 
-              'cogs.commands.setusername', 'cogs.commands.clearchannel', 'cogs.commands.automod']
+extensions = ['cogs.commands.bancommand', 'cogs.commands.rolereactcommand', 'cogs.commands.newrolecommand', 
+              'cogs.commands.setusernamecommand', 'cogs.commands.clearchannelcommand', 'cogs.commands.automod']
 
 async def load_cogs():
     for extension in extensions:
