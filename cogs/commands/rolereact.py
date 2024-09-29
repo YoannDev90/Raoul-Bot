@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import json
 import os
+import hashlib
 
 class RoleReact(commands.Cog):
     def __init__(self, bot):
@@ -24,17 +25,6 @@ class RoleReact(commands.Cog):
     async def rolereact(self, interaction: discord.Interaction, message: str, roles: str, maxroles: int = 0, locked: bool = False):
         """
         Crée un message de réaction pour l'attribution de rôles avec des boutons.
-
-        Parameters:
-        -----------
-        message: str
-            Le message à afficher pour la réaction de rôle
-        roles: str
-            Les rôles à attribuer, séparés par des virgules
-        maxroles: int, optional
-            Le nombre maximum de rôles qu'un utilisateur peut sélectionner (0 pour illimité)
-        locked: bool, optional
-            Si True, les utilisateurs ne peuvent interagir qu'une seule fois avec les boutons
         """
         role_list = [role.strip() for role in roles.split(',')]
 
@@ -45,7 +35,8 @@ class RoleReact(commands.Cog):
         view = RoleReactView(self.bot, role_list, maxroles, locked)
         sent_message = await interaction.channel.send(embed=embed, view=view)
 
-        self.rolereact_data[str(sent_message.id)] = {
+        message_id = str(sent_message.id)
+        self.rolereact_data[message_id] = {
             'roles': role_list,
             'maxroles': maxroles,
             'locked': locked,
@@ -75,15 +66,13 @@ class RoleReactView(discord.ui.View):
         self.maxroles = maxroles
         self.locked = locked
 
-    @discord.ui.button(label="Placeholder", style=discord.ButtonStyle.primary, custom_id="rolereact:placeholder")
-    async def placeholder_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if str(interaction.message.id) in self.bot.get_cog('RoleReact').rolereact_data:
-            data = self.bot.get_cog('RoleReact').rolereact_data[str(interaction.message.id)]
-            self.maxroles = data['maxroles']
-            self.locked = data['locked']
+        data = self.bot.get_cog('RoleReact').rolereact_data.get(str(interaction.message.id))
+        if not data:
+            return False
+
+        self.maxroles = data['maxroles']
+        self.locked = data['locked']
 
         if self.locked:
             user_roles = [role.name for role in interaction.user.roles]
@@ -102,21 +91,23 @@ class RoleReactView(discord.ui.View):
 
 class RoleButton(discord.ui.Button):
     def __init__(self, role_name: str):
-        super().__init__(style=discord.ButtonStyle.primary, label=role_name, custom_id=f"rolereact:{role_name}")
+        truncated_name = role_name[:80]  # Tronquer le nom du rôle à 80 caractères
+        custom_id = f"rr:{hashlib.md5(role_name.encode()).hexdigest()[:20]}"  # Créer un custom_id unique et court
+        super().__init__(style=discord.ButtonStyle.primary, label=truncated_name, custom_id=custom_id)
+        self.full_role_name = role_name
 
     async def callback(self, interaction: discord.Interaction):
-        role_name = self.custom_id.split(':')[1]
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        role = discord.utils.get(interaction.guild.roles, name=self.full_role_name)
         if role is None:
-            await interaction.response.send_message(f"Le rôle {role_name} n'existe pas.", ephemeral=True)
+            await interaction.response.send_message(f"Le rôle {self.full_role_name} n'existe pas.", ephemeral=True)
             return
 
         if role in interaction.user.roles:
             await interaction.user.remove_roles(role)
-            await interaction.response.send_message(f"Le rôle {role_name} vous a été retiré.", ephemeral=True)
+            await interaction.response.send_message(f"Le rôle {self.full_role_name} vous a été retiré.", ephemeral=True)
         else:
             await interaction.user.add_roles(role)
-            await interaction.response.send_message(f"Le rôle {role_name} vous a été attribué.", ephemeral=True)
+            await interaction.response.send_message(f"Le rôle {self.full_role_name} vous a été attribué.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(RoleReact(bot))
